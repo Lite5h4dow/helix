@@ -132,7 +132,12 @@ impl Watcher {
             None => match filesentry::Watcher::new() {
                 Ok(watcher) => {
                     watcher.set_filter(self.filter.clone(), false);
+                    // filesentry calls handlers on its own thread, outside the tokio runtime.
+                    // Hooks may call `send_blocking`, which needs a runtime for its timeout
+                    // when a channel is full, so enter the editor's runtime first.
+                    let runtime = tokio::runtime::Handle::try_current().ok();
                     watcher.add_handler(move |events| {
+                        let _guard = runtime.as_ref().map(|runtime| runtime.enter());
                         dispatch(FileSystemDidChange { fs_events: events });
                         true
                     });
